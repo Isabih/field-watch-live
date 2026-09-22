@@ -132,6 +132,64 @@
   --sidebar-ring: oklch(0.551 0.027 264.364);
 }
 
+@theme inline {
+  --color-ok: var(--ok);
+  --color-fault: var(--fault);
+  --color-idle: var(--idle);
+  --color-asphalt: var(--asphalt);
+  --color-asphalt-line: var(--asphalt-line);
+  --font-display: "Barlow Condensed", ui-sans-serif, system-ui;
+  --font-sans: "Barlow", ui-sans-serif, system-ui;
+  --animate-alarm: alarm 0.9s ease-in-out infinite;
+  --animate-beacon: beacon 1.6s ease-out infinite;
+  --animate-dash: dash 1.2s linear infinite;
+}
+
+@keyframes alarm {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 var(--fault);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 34px 8px var(--fault);
+  }
+}
+
+@keyframes beacon {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes dash {
+  to {
+    background-position-x: -64px;
+  }
+}
+
+:root {
+  --ok: oklch(0.78 0.19 145);
+  --fault: oklch(0.63 0.25 27);
+  --idle: oklch(0.5 0.02 250);
+  --asphalt: oklch(0.26 0.01 250);
+  --asphalt-line: oklch(0.85 0.14 95);
+}
+
+.dark {
+  --ok: oklch(0.78 0.19 145);
+  --fault: oklch(0.63 0.25 27);
+  --idle: oklch(0.45 0.02 250);
+  --asphalt: oklch(0.24 0.01 250);
+  --asphalt-line: oklch(0.85 0.14 95);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
@@ -140,5 +198,6 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
   }
 }
