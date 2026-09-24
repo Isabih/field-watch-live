@@ -1,244 +1,161 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  Activity,
-  Antenna,
-  Check,
-  CircleAlert,
-  Gauge,
-  Radio,
-  RefreshCw,
-  RotateCcw,
-  Waves,
-} from "lucide-react";
-import { useState } from "react";
-import {
-  DEFAULT_BROKER,
-  FAULT_PENALTY,
-  START_MARKS,
-  TOPICS,
-  useFieldMonitor,
-  type FieldEvent,
-} from "@/lib/field-mqtt";
+import { Activity, Bike, CircleAlert, Waves } from "lucide-react";
+import { FLASH_MS, START_MARKS, useField, useNow } from "@/lib/field-mqtt";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Field Command | Live MQTT Competition Monitor" },
-      {
-        name: "description",
-        content:
-          "Professional live field monitor for MQTT line-touch faults, ultrasonic stage switching, and competition scoring.",
-      },
-      { property: "og:title", content: "Field Command | Live MQTT Competition Monitor" },
-      {
-        property: "og:description",
-        content: "Monitor line faults, ultrasonic detections, stage transitions, and remaining marks live.",
-      },
+      { title: "Live View | Field Command" },
+      { name: "description", content: "Live presentation of the ultrasonic stage sensor and line-violation sensor with instant fault effects." },
+      { property: "og:title", content: "Live View | Field Command" },
+      { property: "og:description", content: "Watch stage switching and line violations happen live." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: Index,
+  component: LiveView,
 });
 
-const buttonBase =
-  "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50";
+function LiveView() {
+  const { state } = useField();
+  const now = useNow();
+  const lineFlash = state.lastLineAt !== null && now - state.lastLineAt < FLASH_MS;
+  const stageFlash = state.lastStageAt !== null && now - state.lastStageAt < FLASH_MS;
+  const stage = state.activeStage;
+  const low = state.marks < START_MARKS / 2;
 
-function StatusLight({ active, fault = false }: { active: boolean; fault?: boolean }) {
   return (
-    <span className="relative flex size-3 shrink-0 items-center justify-center" aria-hidden="true">
-      {active && <span className={`absolute size-3 rounded-full ${fault ? "bg-fault" : "bg-ok"} animate-beacon`} />}
-      <span className={`relative size-2.5 rounded-full ${active ? (fault ? "bg-fault" : "bg-ok") : "bg-idle"}`} />
-    </span>
-  );
-}
+    <div className="space-y-5">
+      {lineFlash && (
+        <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-fault bg-fault/15 px-4 py-4 text-fault animate-alarm" role="alert">
+          <CircleAlert className="size-7" />
+          <p className="font-display text-xl font-bold uppercase sm:text-2xl">Line violation · Stage {stage} · −5 marks</p>
+        </div>
+      )}
+      {stageFlash && !lineFlash && (
+        <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-ok bg-ok/15 px-4 py-4 text-ok" role="status">
+          <Waves className="size-7" />
+          <p className="font-display text-xl font-bold uppercase sm:text-2xl">Stage 1 finished · Stage 2 active</p>
+        </div>
+      )}
 
-function Metric({ label, value, note, tone = "default" }: { label: string; value: string | number; note: string; tone?: "default" | "ok" | "fault" }) {
-  const toneClass = tone === "ok" ? "text-ok" : tone === "fault" ? "text-fault" : "text-foreground";
-  return (
-    <div className="border-t-2 border-border bg-card p-4">
-      <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
-      <p className={`mt-2 font-display text-4xl font-bold ${toneClass}`}>{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{note}</p>
+      <div className="grid gap-4 md:grid-cols-4">
+        <Big label="Remaining marks" value={state.marks} tone={low ? "fault" : "default"}>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className={`h-full transition-all ${low ? "bg-fault" : "bg-ok"}`} style={{ width: `${state.marks}%` }} /></div>
+        </Big>
+        <Big label="Current stage" value={`Stage ${stage}`} tone="ok" note={stage === 1 ? "Waiting for ultrasonic" : "Stage 1 completed"} />
+        <Big label="Line faults" value={state.faults} tone={state.faults ? "fault" : "default"} note={`S1: ${state.stage1Faults} · S2: ${state.stage2Faults}`} />
+        <Big label="Deducted" value={`−${START_MARKS - state.marks}`} tone={state.faults ? "fault" : "default"} note="5 marks per violation" />
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+        <FieldRoad stage={stage} lineFlash={lineFlash} stageFlash={stageFlash} />
+        <div className="space-y-5">
+          <SensorCard title="Ultrasonic · stage switch" topic="bike/stage_switching" active={stageFlash} activeText="OBJECT ≤ 4 m · HIGH" idleText="Range clear" tone="ok" icon={<Waves className="size-6" />} />
+          <SensorCard title="Limiter · line violation" topic="bike/line_violation" active={lineFlash} activeText="LINE TOUCHED · HIGH" idleText="Line clear" tone="fault" icon={<CircleAlert className="size-6" />} />
+          <div className="rounded-lg border bg-card p-4">
+            <p className="text-xs font-bold uppercase text-muted-foreground">Stage progress</p>
+            <div className="mt-3 flex items-center gap-2">
+              <StageDot n={1} done={stage === 2} active={stage === 1} />
+              <div className={`h-1 flex-1 rounded ${stage === 2 ? "bg-ok" : "bg-muted"}`} />
+              <StageDot n={2} done={false} active={stage === 2} />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function FieldRoad({ stage, stage1Fault, stage2Fault }: { stage: 1 | 2; stage1Fault: boolean; stage2Fault: boolean }) {
-  const detected = stage === 2;
+function Big({ label, value, note, tone = "default", children }: { label: string; value: string | number; note?: string; tone?: "default" | "ok" | "fault"; children?: React.ReactNode }) {
+  const c = tone === "ok" ? "text-ok" : tone === "fault" ? "text-fault" : "text-foreground";
   return (
-    <section className="overflow-hidden rounded-lg border bg-field" aria-label="Virtual field view">
+    <div className="rounded-lg border bg-card p-5">
+      <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
+      <p className={`mt-2 font-display text-5xl font-bold ${c}`}>{value}</p>
+      {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
+      {children}
+    </div>
+  );
+}
+
+function StageDot({ n, done, active }: { n: number; done: boolean; active: boolean }) {
+  return (
+    <div className={`flex size-10 items-center justify-center rounded-full border-2 font-display font-bold ${active ? "border-ok bg-ok/15 text-ok" : done ? "border-ok bg-ok text-ok-foreground" : "border-border text-muted-foreground"}`}>{n}</div>
+  );
+}
+
+function SensorCard({ title, topic, active, activeText, idleText, tone, icon }: { title: string; topic: string; active: boolean; activeText: string; idleText: string; tone: "ok" | "fault"; icon: React.ReactNode }) {
+  const on = tone === "ok" ? "border-ok bg-ok/10 text-ok shadow-sensor" : "border-fault bg-fault/10 text-fault animate-alarm";
+  return (
+    <div className={`rounded-lg border-2 p-4 transition-colors ${active ? on : "border-border bg-card"}`}>
+      <div className="flex items-center gap-3">
+        <div className={`flex size-12 items-center justify-center rounded-lg border ${active ? "border-current" : "text-muted-foreground"}`}>{icon}</div>
+        <div className="min-w-0">
+          <p className="text-xs font-bold uppercase text-muted-foreground">{title}</p>
+          <p className={`font-display text-lg font-bold ${active ? "" : "text-foreground"}`}>{active ? activeText : idleText}</p>
+        </div>
+      </div>
+      <p className="mt-2 truncate font-mono text-[10px] text-muted-foreground">{topic}</p>
+    </div>
+  );
+}
+
+function FieldRoad({ stage, lineFlash, stageFlash }: { stage: 1 | 2; lineFlash: boolean; stageFlash: boolean }) {
+  const s1Line = lineFlash && stage === 1;
+  const s2Line = lineFlash && stage === 2;
+  const lineCls = (fault: boolean, current: boolean) =>
+    fault ? "h-2 bg-fault animate-alarm shadow-[0_0_24px_var(--fault)]" : current ? "h-1.5 bg-ok" : "h-1 bg-ok/30";
+
+  return (
+    <section className="overflow-hidden rounded-lg border bg-field" aria-label="Virtual field">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-3">
         <div>
           <p className="text-xs font-bold uppercase text-muted-foreground">Live field view</p>
-          <h2 className="font-display text-lg font-semibold">Roadside detection zone</h2>
+          <h1 className="font-display text-lg font-semibold">Roadside detection zone</h1>
         </div>
-        <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase ${detected ? "border-ok/50 bg-ok/10 text-ok" : "border-border bg-muted text-muted-foreground"}`}>
-          <StatusLight active={detected} />
-          Ultrasonic {detected ? "high" : "low"}
+        <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold uppercase ${stageFlash ? "border-ok/50 bg-ok/10 text-ok" : "text-muted-foreground"}`}>
+          <span className={`size-2 rounded-full ${stageFlash ? "bg-ok animate-beacon" : "bg-idle"}`} /> Ultrasonic {stageFlash ? "high" : "low"}
         </div>
       </div>
 
-      <div className="relative min-h-[430px] overflow-hidden field-grid">
-        <div className="absolute inset-y-0 left-[22%] w-[56%] border-x border-dashed border-field-line/40 bg-road">
-          <div className="absolute inset-y-0 left-1/2 w-px border-l-2 border-dashed border-caution/50" />
-          <div className={`absolute inset-x-0 top-[34%] h-1 ${stage1Fault ? "bg-fault animate-alarm" : "bg-foreground/20"}`} />
-          <div className={`absolute inset-x-0 top-[70%] h-1 ${stage2Fault ? "bg-fault animate-alarm" : "bg-foreground/20"}`} />
-          <span className="absolute left-3 top-[27%] text-xs font-bold uppercase text-muted-foreground">Stage 1 line</span>
-          <span className="absolute left-3 top-[63%] text-xs font-bold uppercase text-muted-foreground">Stage 2 line</span>
-        </div>
-
-        <div className="absolute left-4 top-1/2 z-20 -translate-y-1/2 sm:left-[8%]">
-          <div className="relative flex flex-col items-center">
-            <div className={`relative z-10 flex h-24 w-14 flex-col items-center justify-center gap-2 rounded-lg border-2 bg-card ${detected ? "border-ok shadow-sensor" : "border-border"}`}>
-              <Waves className={`size-6 ${detected ? "text-ok" : "text-muted-foreground"}`} />
-              <span className="text-[9px] font-bold uppercase text-muted-foreground">US-01</span>
-            </div>
-            <div className="h-14 w-2 bg-field-line" />
-            <div className="h-2 w-20 bg-field-line" />
+      <div className="field-grid relative h-[440px] overflow-hidden">
+        <div className={`absolute inset-y-0 left-[24%] w-[52%] border-x-4 bg-road ${lineFlash ? "border-fault" : "border-foreground/20"}`}>
+          <div className="absolute inset-y-0 left-1/2 border-l-2 border-dashed border-caution/60" />
+          {/* Stage 2 zone (top) and stage 1 zone (bottom) */}
+          <div className={`absolute inset-x-0 top-0 h-1/2 ${stage === 2 ? "bg-ok/5" : ""}`} />
+          <div className={`absolute inset-x-0 bottom-0 h-1/2 ${stage === 1 ? "bg-ok/5" : ""}`} />
+          <div className={`absolute inset-x-0 top-[22%] rounded ${lineCls(s2Line, stage === 2)}`} />
+          <div className={`absolute inset-x-0 top-[72%] rounded ${lineCls(s1Line, stage === 1)}`} />
+          <span className={`absolute left-3 top-[14%] text-xs font-bold uppercase ${s2Line ? "text-fault" : "text-muted-foreground"}`}>Stage 2 line</span>
+          <span className={`absolute left-3 top-[64%] text-xs font-bold uppercase ${s1Line ? "text-fault" : "text-muted-foreground"}`}>Stage 1 line</span>
+          <div className={`absolute left-1/2 -translate-x-1/2 transition-all duration-700 ${stage === 1 ? "top-[78%]" : "top-[30%]"}`}>
+            <div className={`flex size-14 items-center justify-center rounded-full border-2 bg-card ${lineFlash ? "border-fault text-fault" : "border-ok text-ok"}`}><Bike className="size-7" /></div>
           </div>
         </div>
 
-        <div className={`sensor-cone absolute left-[13%] top-1/2 h-56 w-[40%] -translate-y-1/2 ${detected ? "is-active" : ""}`}>
-          {detected && <div className="absolute inset-0 animate-beam" />}
-        </div>
-
-        <div className={`absolute left-[51%] top-1/2 -translate-x-1/2 -translate-y-1/2 transition-all duration-500 ${detected ? "scale-100 opacity-100" : "scale-90 opacity-20"}`}>
-          <div className={`relative flex h-32 w-20 items-center justify-center rounded-lg border-2 bg-card/80 ${detected ? "border-ok animate-detection" : "border-border"}`}>
-            <Activity className={detected ? "text-ok" : "text-muted-foreground"} />
-          </div>
-          <p className={`mt-3 text-center text-xs font-bold uppercase ${detected ? "text-ok" : "text-muted-foreground"}`}>
-            {detected ? "Object detected" : "Range clear"}
-          </p>
-        </div>
-
-        <div className="absolute right-4 top-4 grid gap-2 sm:right-6">
-          <div className={`min-w-36 rounded-lg border px-3 py-2 ${stage === 1 ? "border-ok/50 bg-ok/10" : "border-border bg-card/90"}`}>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Stage 1</p>
-            <p className={`text-sm font-bold ${stage === 1 ? "text-ok" : "text-foreground"}`}>{stage === 1 ? "Active" : "Free"}</p>
-          </div>
-          <div className={`min-w-36 rounded-lg border px-3 py-2 ${stage === 2 ? "border-ok/50 bg-ok/10" : "border-border bg-card/90"}`}>
-            <p className="text-[10px] font-bold uppercase text-muted-foreground">Stage 2</p>
-            <p className={`text-sm font-bold ${stage === 2 ? "text-ok" : "text-foreground"}`}>{stage === 2 ? "Active" : "Standby"}</p>
+        {/* Ultrasonic sensor sits at the boundary between stage 1 and stage 2 */}
+        <div className="absolute left-3 top-1/2 z-20 -translate-y-1/2 sm:left-[7%]">
+          <div className={`flex h-20 w-14 flex-col items-center justify-center gap-1 rounded-lg border-2 bg-card ${stageFlash ? "border-ok shadow-sensor" : "border-border"}`}>
+            <Waves className={`size-6 ${stageFlash ? "text-ok" : "text-muted-foreground"}`} />
+            <span className="text-[9px] font-bold uppercase text-muted-foreground">US-01</span>
           </div>
         </div>
+        <div className={`sensor-cone absolute left-[12%] top-1/2 h-40 w-[45%] -translate-y-1/2 ${stageFlash ? "is-active" : ""}`}>
+          {stageFlash && <div className="absolute inset-0 animate-beam" />}
+        </div>
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-right">
+          <Activity className={`ml-auto size-5 ${stageFlash ? "text-ok" : "text-muted-foreground"}`} />
+          <p className="mt-1 text-[10px] font-bold uppercase text-muted-foreground">4 m range</p>
+        </div>
 
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between border-t bg-card/95 px-4 py-3 backdrop-blur-sm">
-          <span className="text-xs font-bold uppercase text-muted-foreground">Detection result</span>
-          <span className={`text-sm font-bold ${detected ? "text-ok" : "text-muted-foreground"}`}>
-            {detected ? "HIGH · STAGE 1 FREE · NO FAULT" : "LOW · STAGE 1 RUNNING"}
+        <div className={`absolute inset-x-0 bottom-0 flex items-center justify-between border-t px-4 py-3 backdrop-blur-sm ${lineFlash ? "bg-fault/20" : "bg-card/95"}`}>
+          <span className="text-xs font-bold uppercase text-muted-foreground">Status</span>
+          <span className={`text-sm font-bold ${lineFlash ? "text-fault" : "text-ok"}`}>
+            {lineFlash ? `FAULT · STAGE ${stage} LINE TOUCHED` : stage === 1 ? "STAGE 1 RUNNING · NO FAULT" : "STAGE 2 RUNNING · NO FAULT"}
           </span>
         </div>
       </div>
     </section>
-  );
-}
-
-function EventRow({ event }: { event: FieldEvent }) {
-  const icon = event.kind === "fault" ? <CircleAlert className="size-3.5" /> : event.kind === "switch" ? <RefreshCw className="size-3.5" /> : <Radio className="size-3.5" />;
-  const tone = event.kind === "fault" ? "text-fault" : event.kind === "switch" ? "text-caution" : "text-ok";
-  return (
-    <li className="grid grid-cols-[70px_18px_1fr] gap-2 border-b py-2 text-xs last:border-0">
-      <time className="font-mono text-muted-foreground">{new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
-      <span className={tone}>{icon}</span>
-      <div className="min-w-0">
-        <p className={`font-semibold ${tone}`}>{event.message}</p>
-        <p className="truncate font-mono text-[10px] text-muted-foreground">{event.topic}</p>
-      </div>
-    </li>
-  );
-}
-
-function Index() {
-  const [brokerInput, setBrokerInput] = useState(DEFAULT_BROKER);
-  const [broker, setBroker] = useState(DEFAULT_BROKER);
-  const [nonce, setNonce] = useState(0);
-  const { state, status, publish, reset } = useFieldMonitor(broker, nonce);
-  const online = status === "online";
-  const detectionHigh = state.activeStage === 2;
-
-  return (
-    <main className="dark min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 lg:px-8">
-        <header className="mb-5 flex flex-wrap items-center justify-between gap-4 border-b pb-5">
-          <div className="flex items-center gap-3">
-            <div className="flex size-11 items-center justify-center rounded-lg border bg-card text-caution"><Antenna className="size-6" /></div>
-            <div>
-              <h1 className="font-display text-xl font-bold sm:text-2xl">Field Command</h1>
-              <p className="text-xs text-muted-foreground">Industrial line and stage monitoring</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-5">
-            <div className="hidden text-right sm:block"><p className="text-[10px] font-bold uppercase text-muted-foreground">Current phase</p><p className="text-sm font-bold">Stage {state.activeStage}</p></div>
-            <div className={`flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold uppercase ${online ? "border-ok/40 bg-ok/10 text-ok" : "border-border bg-card text-muted-foreground"}`}>
-              <StatusLight active={online} /> Broker {status}
-            </div>
-          </div>
-        </header>
-
-        <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)_300px]">
-          <aside className="space-y-5">
-            <div className="relative overflow-hidden rounded-lg border bg-card p-5 text-center">
-              <div className={`absolute inset-x-0 top-0 h-1 ${state.marks < START_MARKS / 2 ? "bg-fault" : "bg-ok"}`} />
-              <p className="text-xs font-bold uppercase text-muted-foreground">Remaining marks</p>
-              <p className={`mt-2 font-display text-6xl font-bold ${state.marks < START_MARKS / 2 ? "text-fault" : "text-foreground"}`}>{state.marks}</p>
-              <div className="mx-auto mt-4 h-2 max-w-40 overflow-hidden rounded-full bg-muted"><div className="h-full bg-ok transition-all" style={{ width: `${state.marks}%` }} /></div>
-              <p className="mt-2 text-xs text-muted-foreground">Started with {START_MARKS}</p>
-            </div>
-
-            <section className="rounded-lg border bg-card p-4">
-              <div className="mb-4 flex items-center gap-2"><Radio className="size-4 text-ok" /><h2 className="text-xs font-bold uppercase">Live MQTT broker</h2></div>
-              <label className="text-[10px] font-bold uppercase text-muted-foreground" htmlFor="broker">WebSocket address</label>
-              <input id="broker" value={brokerInput} onChange={(event) => setBrokerInput(event.target.value)} className="mt-1 w-full rounded-lg border bg-background px-3 py-2 font-mono text-xs outline-none transition-colors focus:border-ok" />
-              <button className={`${buttonBase} mt-3 w-full border-ok bg-ok text-ok-foreground hover:bg-ok/90`} onClick={() => { setBroker(brokerInput); setNonce((value) => value + 1); }}><Radio className="size-4" />Connect</button>
-            </section>
-
-            <section className="rounded-lg border bg-card p-4">
-              <h2 className="mb-3 text-xs font-bold uppercase">Sensor states</h2>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between"><span className="text-muted-foreground">Stage 1 line</span><span className={`flex items-center gap-2 font-semibold ${state.stage1Fault ? "text-fault" : "text-ok"}`}><StatusLight active fault={state.stage1Fault} />{state.stage1Fault ? "Fault" : "Clear"}</span></div>
-                <div className="flex items-center justify-between"><span className="text-muted-foreground">Stage 2 line</span><span className={`flex items-center gap-2 font-semibold ${state.stage2Fault ? "text-fault" : "text-ok"}`}><StatusLight active fault={state.stage2Fault} />{state.stage2Fault ? "Fault" : "Clear"}</span></div>
-                <div className="flex items-center justify-between"><span className="text-muted-foreground">Ultrasonic</span><span className={`flex items-center gap-2 font-semibold ${detectionHigh ? "text-ok" : "text-muted-foreground"}`}><StatusLight active={detectionHigh} />{detectionHigh ? "High" : "Low"}</span></div>
-              </div>
-            </section>
-          </aside>
-
-          <div className="min-w-0 space-y-5">
-            <div className="grid grid-cols-3 gap-3">
-              <Metric label="Active stage" value={`0${state.activeStage}`} note={detectionHigh ? "Stage 1 is free" : "Stage 1 running"} tone="ok" />
-              <Metric label="Line faults" value={String(state.faults).padStart(2, "0")} note={`${FAULT_PENALTY} marks each`} tone={state.faults ? "fault" : "default"} />
-              <Metric label="Switch sensor" value={detectionHigh ? "HIGH" : "LOW"} note={detectionHigh ? "Object in range" : "Range is clear"} tone={detectionHigh ? "ok" : "default"} />
-            </div>
-            <FieldRoad stage={state.activeStage} stage1Fault={state.stage1Fault} stage2Fault={state.stage2Fault} />
-
-            <section className="rounded-lg border bg-card p-4">
-              <div className="mb-3 flex items-center justify-between"><h2 className="text-xs font-bold uppercase">Test controls</h2><button aria-label="Reset marks and events" title="Reset marks and events" onClick={reset} className={`${buttonBase} size-9 min-h-0 px-0 text-muted-foreground hover:bg-muted hover:text-foreground`}><RotateCcw className="size-4" /></button></div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <button className={`${buttonBase} border-fault/40 text-fault hover:bg-fault/10`} onClick={() => publish(TOPICS.stage1Line, "stage one line fault committed")}><CircleAlert className="size-4" />Stage 1 fault</button>
-                <button className={`${buttonBase} hover:bg-muted`} onClick={() => publish(TOPICS.stage1Line, "clear")}><Check className="size-4 text-ok" />Clear stage 1</button>
-                <button className={`${buttonBase} border-fault/40 text-fault hover:bg-fault/10`} onClick={() => publish(TOPICS.stage2Line, "stage two line fault committed")}><CircleAlert className="size-4" />Stage 2 fault</button>
-                <button className={`${buttonBase} hover:bg-muted`} onClick={() => publish(TOPICS.stage2Line, "clear")}><Check className="size-4 text-ok" />Clear stage 2</button>
-                <button className={`${buttonBase} border-ok/40 text-ok hover:bg-ok/10`} onClick={() => publish(TOPICS.stageSwitch, "high")}><Waves className="size-4" />Sensor high</button>
-                <button className={`${buttonBase} hover:bg-muted`} onClick={() => publish(TOPICS.stageSwitch, "low")}><Gauge className="size-4" />Sensor low</button>
-              </div>
-            </section>
-          </div>
-
-          <aside className="space-y-5">
-            <section className={`rounded-lg border p-4 ${state.faults ? "border-fault/40 bg-fault/5" : "bg-card"}`}>
-              <div className="flex items-center justify-between"><h2 className="text-xs font-bold uppercase text-muted-foreground">Line deductions</h2><CircleAlert className={`size-4 ${state.faults ? "text-fault" : "text-muted-foreground"}`} /></div>
-              <div className="mt-4 flex items-end justify-between border-b pb-4"><div><p className="font-display text-3xl font-bold">-{state.faults * FAULT_PENALTY}</p><p className="text-xs text-muted-foreground">Total marks</p></div><p className="text-sm font-bold text-fault">-{FAULT_PENALTY} / fault</p></div>
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">Only a line-touch fault deducts marks. The ultrasonic stage switch never affects the score.</p>
-            </section>
-
-            <section className="rounded-lg border bg-card p-4">
-              <div className="mb-3 flex items-center justify-between"><h2 className="text-xs font-bold uppercase">System event log</h2><span className="font-mono text-[10px] text-muted-foreground">LIVE</span></div>
-              {state.events.length ? <ul className="max-h-[470px] overflow-auto">{state.events.map((event) => <EventRow key={event.id} event={event} />)}</ul> : <div className="flex min-h-48 flex-col items-center justify-center text-center"><Radio className="mb-3 size-6 text-muted-foreground" /><p className="text-sm font-semibold">Listening for messages</p><p className="mt-1 text-xs text-muted-foreground">Sensor events will appear here.</p></div>}
-            </section>
-          </aside>
-        </div>
-        <footer className="mt-5 border-t pt-4 font-mono text-[10px] text-muted-foreground">TOPICS · {Object.values(TOPICS).join("  /  ")}</footer>
-      </div>
-    </main>
   );
 }
