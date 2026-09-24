@@ -1,128 +1,179 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import mqtt, { type MqttClient } from "mqtt";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
+/** Fixed topics — identical in ESP32 firmware, backend and frontend. Payload is always "1". */
 export const TOPICS = {
-  stage1Line: "field/stage1/line",
-  stage2Line: "field/stage2/line",
-  stageSwitch: "field/stage/switch",
-  status: "field/status",
+  stage: "bike/stage_switching",
+  line: "bike/line_violation",
 } as const;
 
-export const DEFAULT_BROKER = "wss://test.mosquitto.org:8081";
+export const DEFAULT_BACKEND = "http://localhost:8000";
 export const START_MARKS = 100;
 export const FAULT_PENALTY = 5;
+export const FLASH_MS = 3500;
 
 export type EventKind = "fault" | "switch" | "info";
-
-export type FieldEvent = {
-  id: string;
-  at: number;
-  topic: string;
-  message: string;
-  kind: EventKind;
-};
+export type FieldEvent = { id: string; at: number; topic: string; message: string; kind: EventKind; stage: 1 | 2 };
 
 export type FieldState = {
   activeStage: 1 | 2;
-  stage1Fault: boolean;
-  stage2Fault: boolean;
   marks: number;
   faults: number;
+  stage1Faults: number;
+  stage2Faults: number;
+  lastLineAt: number | null;
+  lastStageAt: number | null;
+  mqttConnected: boolean;
+  mqttHost: string;
+  mqttPort: number;
   events: FieldEvent[];
 };
 
-const initialState: FieldState = {
+export const initialState: FieldState = {
   activeStage: 1,
-  stage1Fault: false,
-  stage2Fault: false,
   marks: START_MARKS,
   faults: 0,
+  stage1Faults: 0,
+  stage2Faults: 0,
+  lastLineAt: null,
+  lastStageAt: null,
+  mqttConnected: false,
+  mqttHost: "",
+  mqttPort: 1884,
   events: [],
 };
 
-const isHigh = (raw: string) => {
-  const v = raw.trim().toLowerCase();
-  if (!v) return false;
-  try {
-    const parsed = JSON.parse(v) as Record<string, unknown>;
-    if (typeof parsed === "object" && parsed) {
-      const s = String(parsed["state"] ?? parsed["status"] ?? parsed["value"] ?? "").toLowerCase();
-      if (s) return ["high", "1", "true", "fault", "active", "on"].includes(s);
-    }
-  } catch {
-    /* plain text payload */
+export type LinkStatus = "connecting" | "online" | "offline";
+
+/** Same rules the backend applies — used only for offline demo mode. */
+function applyLocal(prev: FieldState, topic: string): FieldState {
+  const at = Date.now();
+  const id = `${at}-${Math.floor(performance.now())}`;
+  if (topic === TOPICS.line) {
+    const s = prev.activeStage;
+    return {
+      ...prev,
+      marks: Math.max(0, prev.marks - FAULT_PENALTY),
+      faults: prev.faults + 1,
+      stage1Faults: prev.stage1Faults + (s === 1 ? 1 : 0),
+      stage2Faults: prev.stage2Faults + (s === 2 ? 1 : 0),
+      lastLineAt: at,
+      events: [{ id, at, topic, message: `Line violation in stage ${s} · -${FAULT_PENALTY} marks`, kind: "fault" as const, stage: s }, ...prev.events].slice(0, 100),
+    };
   }
-  return !["low", "0", "false", "clear", "off", "free", "idle"].includes(v);
-};
+  const msg = prev.activeStage === 1 ? "Stage 1 ended · Stage 2 active" : "Object detected · already in stage 2";
+  return {
+    ...prev,
+    activeStage: 2,
+    lastStageAt: at,
+    events: [{ id, at, topic, message: msg, kind: "switch" as const, stage: 2 as const }, ...prev.events].slice(0, 100),
+  };
+}
 
-export function useFieldMonitor(brokerUrl: string, connectNonce: number) {
+export function useFieldMonitorInternal() {
+  const [backend, setBackendState] = useState(DEFAULT_BACKEND);
   const [state, setState] = useState<FieldState>(initialState);
-  const [status, setStatus] = useState<"idle" | "connecting" | "online" | "error">("idle");
-  const clientRef = useRef<MqttClient | null>(null);
+  const [link, setLink] = useState<LinkStatus>("connecting");
+  const [nonce, setNonce] = useState(0);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  const push = useCallback((topic: string, message: string) => {
-    setState((prev) => {
-      const high = isHigh(message);
-      const next: FieldState = { ...prev, events: prev.events };
-      let kind: EventKind = "info";
+  useEffect(() => {
+    const saved = localStorage.getItem("fc-backend");
+    if (saved) setBackendState(saved);
+  }, []);
 
-      if (topic === TOPICS.stage1Line || topic === TOPICS.stage2Line) {
-        const key = topic === TOPICS.stage1Line ? "stage1Fault" : "stage2Fault";
-        const was = prev[key];
-        next[key] = high;
-        if (high && !was) {
-          next.marks = Math.max(0, prev.marks - FAULT_PENALTY);
-          next.faults = prev.faults + 1;
-          kind = "fault";
-        }
-      } else if (topic === TOPICS.stageSwitch) {
-        if (high) {
-          next.activeStage = 2;
-          kind = "switch";
-        } else {
-          next.activeStage = 1;
-          kind = "switch";
-        }
-      }
-
-      next.events = [
-        { id: `${Date.now()}-${Math.random()}`, at: Date.now(), topic, message, kind },
-        ...prev.events,
-      ].slice(0, 60);
-      return next;
-    });
+  const setBackend = useCallback((url: string) => {
+    const clean = url.trim().replace(/\/$/, "");
+    localStorage.setItem("fc-backend", clean);
+    setBackendState(clean);
+    setNonce((n) => n + 1);
   }, []);
 
   useEffect(() => {
-    if (!brokerUrl) return;
-    setStatus("connecting");
-    const client = mqtt.connect(brokerUrl, { reconnectPeriod: 4000, connectTimeout: 8000 });
-    clientRef.current = client;
-
-    client.on("connect", () => {
-      setStatus("online");
-      client.subscribe(Object.values(TOPICS));
-    });
-    client.on("error", () => setStatus("error"));
-    client.on("close", () => setStatus((s) => (s === "error" ? s : "connecting")));
-    client.on("message", (topic, payload) => push(topic, payload.toString()));
-
-    return () => {
-      client.end(true);
-      clientRef.current = null;
+    let stop = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const open = () => {
+      if (stop) return;
+      setLink("connecting");
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(backend.replace(/^http/, "ws") + "/ws");
+      } catch {
+        setLink("offline");
+        return;
+      }
+      wsRef.current = ws;
+      ws.onopen = () => setLink("online");
+      ws.onmessage = (e) => {
+        try {
+          setState(JSON.parse(e.data) as FieldState);
+        } catch {
+          /* ignore */
+        }
+      };
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (stop) return;
+        setLink("offline");
+        retry = setTimeout(open, 3000);
+      };
     };
-  }, [brokerUrl, connectNonce, push]);
+    open();
+    return () => {
+      stop = true;
+      clearTimeout(retry);
+      wsRef.current?.close();
+    };
+  }, [backend, nonce]);
 
-  const publish = useCallback(
-    (topic: string, message: string) => {
-      const client = clientRef.current;
-      if (client?.connected) client.publish(topic, message);
-      else push(topic, message); // offline simulation
+  const call = useCallback(
+    async (path: string, body?: unknown) => {
+      const res = await fetch(backend + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
     },
-    [push],
+    [backend],
   );
 
-  const reset = useCallback(() => setState(initialState), []);
+  const simulate = useCallback(
+    (topic: string) => {
+      if (link === "online") void call("/simulate", { topic }).catch(() => undefined);
+      else setState((p) => applyLocal(p, topic));
+    },
+    [link, call],
+  );
 
-  return { state, status, publish, reset };
+  const reset = useCallback(() => {
+    if (link === "online") void call("/reset").catch(() => undefined);
+    else setState((p) => ({ ...initialState, mqttHost: p.mqttHost, mqttPort: p.mqttPort }));
+  }, [link, call]);
+
+  const configureMqtt = useCallback(
+    (host: string, port: number, username: string, password: string) => call("/config", { host, port, username, password }),
+    [call],
+  );
+
+  return { backend, setBackend, state, link, simulate, reset, configureMqtt };
+}
+
+export type FieldMonitor = ReturnType<typeof useFieldMonitorInternal>;
+export const FieldContext = createContext<FieldMonitor | null>(null);
+export function useField() {
+  const ctx = useContext(FieldContext);
+  if (!ctx) throw new Error("useField must be inside FieldContext");
+  return ctx;
+}
+
+/** Ticking clock so flash effects expire on screen. */
+export function useNow(ms = 250) {
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms]);
+  return now;
 }
