@@ -8,8 +8,8 @@ export const TOPICS = {
 
 export const DEFAULT_BACKEND = "http://localhost:8000";
 export const START_MARKS = 100;
-export const FAULT_PENALTY = 5;
-export const FLASH_MS = 3500;
+export const FAULT_PENALTY = 1;
+export const FLASH_MS = 1000;
 
 export type EventKind = "fault" | "switch" | "info";
 export type FieldEvent = { id: string; at: number; topic: string; message: string; kind: EventKind; stage: 1 | 2 };

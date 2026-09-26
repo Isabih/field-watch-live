@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, Bike, CircleAlert, Waves } from "lucide-react";
-import { FLASH_MS, START_MARKS, useField, useNow } from "@/lib/field-mqtt";
+import { FAULT_PENALTY, FLASH_MS, START_MARKS, useField, useNow } from "@/lib/field-mqtt";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -29,7 +29,7 @@ function LiveView() {
       {lineFlash && (
         <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-fault bg-fault/15 px-4 py-4 text-fault animate-alarm" role="alert">
           <CircleAlert className="size-7" />
-          <p className="font-display text-xl font-bold uppercase sm:text-2xl">Line violation · Stage {stage} · −5 marks</p>
+          <p className="font-display text-xl font-bold uppercase sm:text-2xl">Line violation · Stage {stage} · −{FAULT_PENALTY} mark</p>
         </div>
       )}
       {stageFlash && !lineFlash && (
@@ -45,7 +45,7 @@ function LiveView() {
         </Big>
         <Big label="Current stage" value={`Stage ${stage}`} tone="ok" note={stage === 1 ? "Waiting for ultrasonic" : "Stage 1 completed"} />
         <Big label="Line faults" value={state.faults} tone={state.faults ? "fault" : "default"} note={`S1: ${state.stage1Faults} · S2: ${state.stage2Faults}`} />
-        <Big label="Deducted" value={`−${START_MARKS - state.marks}`} tone={state.faults ? "fault" : "default"} note="5 marks per violation" />
+        <Big label="Deducted" value={`−${START_MARKS - state.marks}`} tone={state.faults ? "fault" : "default"} note={`${FAULT_PENALTY} mark per violation`} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
