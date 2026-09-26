@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-/** Fixed topics — identical in ESP32 firmware, backend and frontend. Payload is always "1". */
+/** Fixed topics — identical in ESP32 firmware, backend and frontend. Real devices send signed JSON. */
 export const TOPICS = {
   stage: "bike/stage_switching",
   line: "bike/line_violation",
