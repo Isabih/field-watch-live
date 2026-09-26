@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-/** Fixed topics — identical in ESP32 firmware, backend and frontend. Payload is always "1". */
+/** Fixed topics — identical in ESP32 firmware, backend and frontend. Real devices send signed JSON. */
 export const TOPICS = {
   stage: "bike/stage_switching",
   line: "bike/line_violation",
@@ -8,11 +8,11 @@ export const TOPICS = {
 
 export const DEFAULT_BACKEND = "http://localhost:8000";
 export const START_MARKS = 100;
-export const FAULT_PENALTY = 5;
-export const FLASH_MS = 3500;
+export const FAULT_PENALTY = 1;
+export const FLASH_MS = 1000;
 
 export type EventKind = "fault" | "switch" | "info";
-export type FieldEvent = { id: string; at: number; topic: string; message: string; kind: EventKind; stage: 1 | 2 };
+export type FieldEvent = { id: string; at: number; topic: string; message: string; kind: EventKind; stage: 1 | 2; device?: string };
 
 export type FieldState = {
   activeStage: 1 | 2;

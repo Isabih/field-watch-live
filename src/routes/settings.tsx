@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { CircleAlert, RotateCcw, Server, Waves } from "lucide-react";
 import { useEffect, useState } from "react";
-import { TOPICS, useField } from "@/lib/field-mqtt";
+import { FAULT_PENALTY, TOPICS, useField } from "@/lib/field-mqtt";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -67,10 +67,10 @@ function SettingsPage() {
 
       <section className="rounded-lg border bg-card p-5">
         <h2 className="font-display text-lg font-bold">Fixed topics</h2>
-        <p className="mt-1 text-xs text-muted-foreground">Same in the ESP32, the server and this app. Payload is always <code>1</code>.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Same in the ESP32, the server and this app. Real devices send signed JSON; test signals are generated safely by the server.</p>
         <ul className="mt-3 space-y-2 font-mono text-sm">
           <li className="flex justify-between rounded border bg-background px-3 py-2"><span>{TOPICS.stage}</span><span className="text-ok">stage 1 → 2</span></li>
-          <li className="flex justify-between rounded border bg-background px-3 py-2"><span>{TOPICS.line}</span><span className="text-fault">−5 marks</span></li>
+          <li className="flex justify-between rounded border bg-background px-3 py-2"><span>{TOPICS.line}</span><span className="text-fault">−{FAULT_PENALTY} mark</span></li>
         </ul>
       </section>
 
@@ -89,10 +89,10 @@ function SettingsPage() {
           <li>Install Homebrew, then Mosquitto and Python:<Code>{`/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\nbrew install mosquitto python`}</Code></li>
           <li>Make Mosquitto listen on port 1884 for the ESP32 with a user and password:<Code>{`mosquitto_passwd -c /opt/homebrew/etc/mosquitto/passwd myuser\ncat >> /opt/homebrew/etc/mosquitto/mosquitto.conf <<'EOF'\nlistener 1884 0.0.0.0\nallow_anonymous false\npassword_file /opt/homebrew/etc/mosquitto/passwd\nEOF\nbrew services restart mosquitto`}</Code></li>
           <li>Find your Mac IP (put it in the ESP32 as MQTT_SERVER and here):<Code>ipconfig getifaddr en0</Code></li>
-          <li>Start the backend (folder <code>backend/</code> of this project):<Code>{`cd backend\npython3 -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt\ncp .env.example .env   # set MQTT_HOST, MQTT_USER, MQTT_PASSWORD\nuvicorn main:app --host 0.0.0.0 --port 8000`}</Code></li>
+          <li>Start the backend (folder <code>backend/</code> of this project):<Code>{`cd backend\npython3 -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt\ncp .env.example .env   # set broker login and the same device secret used by ESP32\nuvicorn main:app --host 0.0.0.0 --port 8000`}</Code></li>
           <li>Start this app locally:<Code>{`npm install\nnpm run dev`}</Code>Open it, set Server address to <code>http://localhost:8000</code>.</li>
-          <li>Flash <code>esp32/field_sensors.ino</code> with Arduino IDE (install the PubSubClient library), fill WiFi, IP, user and password.</li>
-          <li>Test without ESP32:<Code>{`mosquitto_pub -h localhost -p 1884 -u myuser -P mypass -t bike/stage_switching -m 1\nmosquitto_pub -h localhost -p 1884 -u myuser -P mypass -t bike/line_violation -m 1`}</Code></li>
+          <li>Flash your signed-payload ESP32 firmware with Arduino IDE. Set WiFi, broker IP, broker login, device ID, and the matching device secret.</li>
+          <li>Use the Test signals above to present without the ESP32. Real MQTT messages must use the signed JSON payload produced by the ESP32.</li>
         </ol>
       </section>
     </div>

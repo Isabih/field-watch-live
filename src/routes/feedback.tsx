@@ -61,7 +61,7 @@ function Row({ e }: { e: FieldEvent }) {
     <li className="grid grid-cols-[80px_20px_1fr] gap-2 border-b py-2.5 text-sm last:border-0">
       <time className="font-mono text-xs text-muted-foreground">{new Date(e.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
       <Icon className={`size-4 ${tone}`} />
-      <div className="min-w-0"><p className={`font-semibold ${tone}`}>{e.message}</p><p className="truncate font-mono text-[10px] text-muted-foreground">{e.topic} · payload 1</p></div>
+      <div className="min-w-0"><p className={`font-semibold ${tone}`}>{e.message}</p><p className="truncate font-mono text-[10px] text-muted-foreground">{e.topic}{e.device ? ` · ${e.device}` : ""}</p></div>
     </li>
   );
 }
