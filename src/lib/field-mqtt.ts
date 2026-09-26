@@ -12,7 +12,7 @@ export const FAULT_PENALTY = 1;
 export const FLASH_MS = 1000;
 
 export type EventKind = "fault" | "switch" | "info";
-export type FieldEvent = { id: string; at: number; topic: string; message: string; kind: EventKind; stage: 1 | 2 };
+export type FieldEvent = { id: string; at: number; topic: string; message: string; kind: EventKind; stage: 1 | 2; device?: string };
 
 export type FieldState = {
   activeStage: 1 | 2;
