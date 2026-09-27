@@ -543,6 +543,10 @@ def handle(
 
     now = int(time.time() * 1000)
 
+    if state["runStatus"] != "running":
+        print(f"[RUN] Ignored {event}; no active run")
+        return
+
     stage = state["activeStage"]
 
 

@@ -65,6 +65,7 @@ function applyLocal(prev: FieldState, topic: string): FieldState {
       stage1Faults: prev.stage1Faults + (s === 1 ? 1 : 0),
       stage2Faults: prev.stage2Faults + (s === 2 ? 1 : 0),
       lastLineAt: at,
+      lineSensorLastSeenAt: at,
       events: [{ id, at, topic, message: `Line violation in stage ${s} · -${FAULT_PENALTY} marks`, kind: "fault" as const, stage: s }, ...prev.events].slice(0, 100),
     };
   }
@@ -73,6 +74,7 @@ function applyLocal(prev: FieldState, topic: string): FieldState {
     ...prev,
     activeStage: 2,
     lastStageAt: at,
+    stageSensorLastSeenAt: at,
     events: [{ id, at, topic, message: msg, kind: "switch" as const, stage: 2 as const }, ...prev.events].slice(0, 100),
   };
 }

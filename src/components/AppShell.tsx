@@ -10,18 +10,20 @@ const nav = [
 
 export function AppShell() {
   const monitor = useFieldMonitorInternal();
-  const { link, state } = monitor;
+  const { link, state, reconnectAttempt } = monitor;
   const pill =
     link === "online" && state.mqttConnected
       ? { t: "Live · sensors connected", c: "border-ok/40 bg-ok/10 text-ok" }
       : link === "online"
         ? { t: "Server online · waiting for sensor hub", c: "border-caution/40 bg-caution/10 text-caution" }
-        : { t: "Demo mode · server offline", c: "border-border bg-card text-muted-foreground" };
+        : link === "connecting"
+          ? { t: `Reconnecting${reconnectAttempt > 1 ? ` · attempt ${reconnectAttempt}` : ""}`, c: "border-caution/40 bg-caution/10 text-caution" }
+          : { t: "Demo mode · reconnecting automatically", c: "border-border bg-card text-muted-foreground" };
 
   return (
     <FieldContext.Provider value={monitor}>
       <div className="dark min-h-screen bg-background text-foreground">
-        <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
+        <header className="app-header sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
           <div className="mx-auto flex max-w-[1480px] flex-wrap items-center gap-4 px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-lg border bg-card text-caution"><Antenna className="size-5" /></div>
@@ -44,12 +46,12 @@ export function AppShell() {
               ))}
             </nav>
             <div className={`ml-auto flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold ${pill.c}`}>
-              <span className={`size-2 rounded-full ${link === "online" && state.mqttConnected ? "bg-ok animate-beacon" : "bg-current"}`} />
+               <span className={`size-2 rounded-full ${link === "online" && state.mqttConnected ? "bg-ok animate-beacon" : link === "connecting" ? "bg-caution animate-pulse" : "bg-current"}`} />
               {pill.t}
             </div>
           </div>
         </header>
-        <main className="mx-auto max-w-[1480px] px-4 py-6 sm:px-6 lg:px-8">
+        <main className="app-main mx-auto max-w-[1480px] px-4 py-6 sm:px-6 lg:px-8">
           <Outlet />
         </main>
       </div>
