@@ -22,6 +22,10 @@ export type FieldState = {
   stage2Faults: number;
   lastLineAt: number | null;
   lastStageAt: number | null;
+  runStatus: "ready" | "running";
+  runStartedAt: number | null;
+  lineSensorLastSeenAt: number | null;
+  stageSensorLastSeenAt: number | null;
   mqttConnected: boolean;
   mqttHost: string;
   mqttPort: number;
@@ -36,6 +40,10 @@ export const initialState: FieldState = {
   stage2Faults: 0,
   lastLineAt: null,
   lastStageAt: null,
+  runStatus: "ready",
+  runStartedAt: null,
+  lineSensorLastSeenAt: null,
+  stageSensorLastSeenAt: null,
   mqttConnected: false,
   mqttHost: "",
   mqttPort: 1884,
@@ -74,6 +82,7 @@ export function useFieldMonitorInternal() {
   const [state, setState] = useState<FieldState>(initialState);
   const [link, setLink] = useState<LinkStatus>("connecting");
   const [nonce, setNonce] = useState(0);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -94,6 +103,7 @@ export function useFieldMonitorInternal() {
     const open = () => {
       if (stop) return;
       setLink("connecting");
+      setReconnectAttempt((attempt) => attempt + 1);
       let ws: WebSocket;
       try {
         ws = new WebSocket(backend.replace(/^http/, "ws") + "/ws");
@@ -102,7 +112,10 @@ export function useFieldMonitorInternal() {
         return;
       }
       wsRef.current = ws;
-      ws.onopen = () => setLink("online");
+      ws.onopen = () => {
+        setLink("online");
+        setReconnectAttempt(0);
+      };
       ws.onmessage = (e) => {
         try {
           setState(JSON.parse(e.data) as FieldState);
@@ -151,12 +164,17 @@ export function useFieldMonitorInternal() {
     else setState((p) => ({ ...initialState, mqttHost: p.mqttHost, mqttPort: p.mqttPort }));
   }, [link, call]);
 
+  const start = useCallback(() => {
+    if (link === "online") void call("/start").catch(() => undefined);
+    else setState((p) => ({ ...initialState, runStatus: "running", runStartedAt: Date.now(), mqttHost: p.mqttHost, mqttPort: p.mqttPort }));
+  }, [link, call]);
+
   const configureMqtt = useCallback(
     (host: string, port: number, username: string, password: string) => call("/config", { host, port, username, password }),
     [call],
   );
 
-  return { backend, setBackend, state, link, simulate, reset, configureMqtt };
+  return { backend, setBackend, state, link, reconnectAttempt, simulate, start, reset, configureMqtt };
 }
 
 export type FieldMonitor = ReturnType<typeof useFieldMonitorInternal>;
