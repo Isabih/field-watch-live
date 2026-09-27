@@ -58,6 +58,7 @@ export async function generatePresentationLayoutOnServer(input: { audienceDistan
   } catch (error) {
     if (NoObjectGeneratedError.isInstance(error)) {
       try {
+        if (!error.text) throw new Error("Missing AI output");
         return presentationLayoutSchema.parse(JSON.parse(error.text));
       } catch {
         throw new Error("Lovable AI returned an invalid layout. Your current layout is unchanged.");
