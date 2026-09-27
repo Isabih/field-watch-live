@@ -35,6 +35,7 @@
   --color-field: var(--field);
   --color-road: var(--road);
   --color-field-line: var(--field-line);
+  --color-info: var(--info);
   --font-display: "Sora", ui-sans-serif, system-ui;
   --font-sans: "Manrope", ui-sans-serif, system-ui;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -73,6 +74,7 @@
   --field: oklch(0.125 0.018 264);
   --road: oklch(0.19 0.012 264);
   --field-line: oklch(0.39 0.018 255);
+  --info: oklch(0.72 0.12 225);
 }
 
 @keyframes alarm {
@@ -119,6 +121,9 @@
 .shadow-sensor {
   box-shadow: 0 0 28px color-mix(in oklab, var(--ok) 30%, transparent);
 }
+
+.presentation-focus .app-header { display: none; }
+.presentation-focus .app-main { max-width: none; padding: 0.75rem; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

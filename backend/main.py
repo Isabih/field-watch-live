@@ -168,6 +168,10 @@ def fresh_state() -> dict:
         "stage2Faults": 0,
         "lastLineAt": None,
         "lastStageAt": None,
+        "runStatus": "ready",
+        "runStartedAt": None,
+        "lineSensorLastSeenAt": None,
+        "stageSensorLastSeenAt": None,
         "events": [],
     }
 
@@ -539,6 +543,10 @@ def handle(
 
     now = int(time.time() * 1000)
 
+    if state["runStatus"] != "running":
+        print(f"[RUN] Ignored {event}; no active run")
+        return
+
     stage = state["activeStage"]
 
 
@@ -547,6 +555,8 @@ def handle(
     # --------------------------------------------------------
 
     if event == "line_violation":
+
+        state["lineSensorLastSeenAt"] = now
 
         state["marks"] = max(
             0,
@@ -575,6 +585,8 @@ def handle(
     # --------------------------------------------------------
 
     elif event == "stage_switching":
+
+        state["stageSensorLastSeenAt"] = now
 
         msg = (
             "Stage 1 ended · Stage 2 active"
@@ -929,6 +941,19 @@ async def reset():
 
     state = fresh_state()
 
+    await broadcast()
+
+    return snapshot()
+
+
+@app.post("/start")
+async def start_run():
+
+    global state
+
+    state = fresh_state()
+    state["runStatus"] = "running"
+    state["runStartedAt"] = int(time.time() * 1000)
     await broadcast()
 
     return snapshot()
