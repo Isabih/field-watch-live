@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, Bike, CircleAlert, Waves } from "lucide-react";
 import { FAULT_PENALTY, FLASH_MS, START_MARKS, useField, useNow } from "@/lib/field-mqtt";
+import { RunControls, HealthStrip, AiLayoutPanel, usePresentationLayout, formatElapsed } from "@/components/LiveControls";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -24,8 +25,15 @@ function LiveView() {
   const stage = state.activeStage;
   const low = state.marks < START_MARKS / 2;
 
+  const { layout, setLayout, runLabel, setRunLabel, distance, setDistance } = usePresentationLayout();
+  const large = layout?.metricScale === "large";
+  const details = layout ? layout.showSensorDetails : true;
+  const elapsed = state.runStatus === "running" && state.runStartedAt ? formatElapsed(now - state.runStartedAt) : "00:00";
+
   return (
     <div className="space-y-5">
+      <RunControls runLabel={runLabel} />
+      {(!layout || layout.statusPlacement === "top") && <HealthStrip />}
       {lineFlash && (
         <div className="flex items-center justify-center gap-3 rounded-lg border-2 border-fault bg-fault/15 px-4 py-4 text-fault animate-alarm" role="alert">
           <CircleAlert className="size-7" />
@@ -39,18 +47,21 @@ function LiveView() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Big label="Remaining marks" value={state.marks} tone={low ? "fault" : "default"}>
+      <div className={`grid gap-4 ${large ? "md:grid-cols-3" : "md:grid-cols-5"}`}>
+        <Big large={large} label="Remaining marks" value={state.marks} tone={low ? "fault" : "default"}>
           <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted"><div className={`h-full transition-all ${low ? "bg-fault" : "bg-ok"}`} style={{ width: `${state.marks}%` }} /></div>
         </Big>
-        <Big label="Current stage" value={`Stage ${stage}`} tone="ok" note={stage === 1 ? "Waiting for ultrasonic" : "Stage 1 completed"} />
-        <Big label="Line faults" value={state.faults} tone={state.faults ? "fault" : "default"} note={`S1: ${state.stage1Faults} · S2: ${state.stage2Faults}`} />
-        <Big label="Deducted" value={`−${START_MARKS - state.marks}`} tone={state.faults ? "fault" : "default"} note={`${FAULT_PENALTY} mark per violation`} />
+        <Big large={large} label="Current stage" value={`Stage ${stage}`} tone="ok" note={stage === 1 ? "Waiting for ultrasonic" : "Stage 1 completed"} />
+        <Big large={large} label="Elapsed time" value={elapsed} tone={state.runStatus === "running" ? "ok" : "default"} note={state.runStatus === "running" ? "Run in progress" : "Ready · press Start Run"} />
+        {!large && <Big label="Line faults" value={state.faults} tone={state.faults ? "fault" : "default"} note={`S1: ${state.stage1Faults} · S2: ${state.stage2Faults}`} />}
+        {!large && <Big label="Deducted" value={`−${START_MARKS - state.marks}`} tone={state.faults ? "fault" : "default"} note={`${FAULT_PENALTY} mark per violation`} />}
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
-        <FieldRoad stage={stage} lineFlash={lineFlash} stageFlash={stageFlash} />
-        <div className="space-y-5">
+      <div className={`grid gap-5 ${details || layout?.statusPlacement === "side" ? "lg:grid-cols-[1fr_320px]" : ""}`}>
+        <FieldRoad stage={stage} lineFlash={lineFlash} stageFlash={stageFlash} tall={layout?.roadEmphasis === "high"} />
+        {(details || layout?.statusPlacement === "side") && <div className="space-y-5">
+          {layout?.statusPlacement === "side" && <HealthStrip vertical />}
+          {details && <>
           <SensorCard title="Ultrasonic · stage switch" topic="bike/stage_switching" active={stageFlash} activeText="OBJECT ≤ 4 m · HIGH" idleText="Range clear" tone="ok" icon={<Waves className="size-6" />} />
           <SensorCard title="Limiter · line violation" topic="bike/line_violation" active={lineFlash} activeText="LINE TOUCHED · HIGH" idleText="Line clear" tone="fault" icon={<CircleAlert className="size-6" />} />
           <div className="rounded-lg border bg-card p-4">
@@ -61,18 +72,20 @@ function LiveView() {
               <StageDot n={2} done={false} active={stage === 2} />
             </div>
           </div>
-        </div>
+          </>}
+        </div>}
       </div>
+      <AiLayoutPanel layout={layout} setLayout={setLayout} runLabel={runLabel} setRunLabel={setRunLabel} distance={distance} setDistance={setDistance} />
     </div>
   );
 }
 
-function Big({ label, value, note, tone = "default", children }: { label: string; value: string | number; note?: string; tone?: "default" | "ok" | "fault"; children?: React.ReactNode }) {
+function Big({ label, value, note, tone = "default", children, large }: { large?: boolean; label: string; value: string | number; note?: string; tone?: "default" | "ok" | "fault"; children?: React.ReactNode }) {
   const c = tone === "ok" ? "text-ok" : tone === "fault" ? "text-fault" : "text-foreground";
   return (
     <div className="rounded-lg border bg-card p-5">
       <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
-      <p className={`mt-2 font-display text-5xl font-bold ${c}`}>{value}</p>
+      <p className={`mt-2 font-display ${large ? "text-7xl" : "text-5xl"} font-bold tabular-nums ${c}`}>{value}</p>
       {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
       {children}
     </div>
@@ -101,7 +114,7 @@ function SensorCard({ title, topic, active, activeText, idleText, tone, icon }: 
   );
 }
 
-function FieldRoad({ stage, lineFlash, stageFlash }: { stage: 1 | 2; lineFlash: boolean; stageFlash: boolean }) {
+function FieldRoad({ stage, lineFlash, stageFlash, tall }: { stage: 1 | 2; lineFlash: boolean; stageFlash: boolean; tall?: boolean }) {
   const s1Line = lineFlash && stage === 1;
   const s2Line = lineFlash && stage === 2;
   const lineCls = (fault: boolean, current: boolean) =>
@@ -119,7 +132,7 @@ function FieldRoad({ stage, lineFlash, stageFlash }: { stage: 1 | 2; lineFlash: 
         </div>
       </div>
 
-      <div className="field-grid relative h-[440px] overflow-hidden">
+      <div className={`field-grid relative ${tall ? "h-[600px]" : "h-[440px]"} overflow-hidden`}>
         <div className={`absolute inset-y-0 left-[24%] w-[52%] border-x-4 bg-road ${lineFlash ? "border-fault" : "border-foreground/20"}`}>
           <div className="absolute inset-y-0 left-1/2 border-l-2 border-dashed border-caution/60" />
           {/* Stage 2 zone (top) and stage 1 zone (bottom) */}
