@@ -543,9 +543,11 @@ def handle(
 
     now = int(time.time() * 1000)
 
+    # A verified sensor event always counts; auto-start the run if needed.
     if state["runStatus"] != "running":
-        print(f"[RUN] Ignored {event}; no active run")
-        return
+        state["runStatus"] = "running"
+        state["runStartedAt"] = now
+        print(f"[RUN] Auto-started by {event} from {device}")
 
     stage = state["activeStage"]
 
